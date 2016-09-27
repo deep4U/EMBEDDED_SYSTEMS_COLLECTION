@@ -17,7 +17,7 @@ Line::~Line(void)
     std::cout << "Object is being deleted free memory" << std::endl;
 	delete ptr;
 }
-void display(Line obj) 
+void display(Line obj)
 {
 	std::cout << "Length of line : " << obj.getLength()<<std::endl;
 }
@@ -33,7 +33,6 @@ Line::Line()
 {
 	std::cout << "constructing line here allocating ptr" << std::endl;
 	ptr= new int;
-	
 }
 Line::Line(int L)
 {

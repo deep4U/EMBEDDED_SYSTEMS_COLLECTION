@@ -22,7 +22,7 @@ void Box::setlength(double a)
 void Box::setwidth(double a)
 {
 	width = a;
-} 
+}
 void Box::setheight(double a)
 {
 	height = a;
