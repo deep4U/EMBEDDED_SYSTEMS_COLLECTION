@@ -236,7 +236,7 @@ The code performs the following steps:
 1.Saves the registers that might be used by the high-level C function on the stack. 
 2.Issues a cld instruction to clear the direction flag DF of eflags, thus making sure that autoincrements on the edi and esi registers will be used with string instructions. 
 3.Copies the hardware error code saved in the stack at location esp+36 in eax. Stores in the same stack location value -1: , this value is used to separate 0x80(int) exceptions from other exceptions. 
-4.Loads ecx with the address of the high-level do_handler_name(  )C function saved in the stack at location esp+32; writes the contents of esin that stack location. 
+4.Loads ecx with the address of the high-level do_handler_name( )C function saved in the stack at location esp+32; writes the contents of esin that stack location. 
 5.Loads the kernel data Segment Selector into the ds and es registers, then sets the ebx register to the address of the current process descriptor
 6.Stores the parameters to be passed to the high-level C function on the stack, namely, the exception hardware error code and address of stack location where value of User Mode registers was saved. 
 7.Invokes the high-level C function whose address is now stored in ecx
@@ -262,14 +262,14 @@ force_sig(sig_number, current);
 When the ret_from_exception( ) function is invoked, it checks if process has received a signal. If so, the signal will be handled either by the process's own signal handler (if it exists) or by the kernel;
 Finally, the handler invokes either die_if_kernel( ) or die_if_no_fixup( ): 
 •The die_if_kernel( ) function checks whether the exception occurred in Kernel Mode; in this ca
-se, it invokes the die( ) function, which prints the contents of all CPU registers on the console and terminates the current process by invoking  do_exit( )
+se, it invokes the die( ) function, which prints the contents of all CPU registers on the console and terminates the current process by invoking do_exit( )
 •The die_if_no_fixup( )function is similar, but before invoking die( )it checks whether the exception was due to an invalid argument of a system call: in the affirmative case, it uses a "fixup" approach, 
 Two exceptions are exploited by the kernel 
 •"Device not available": , this exception is used to defer loading the floating point registers until the last possible moment. 
 •"Page fault": , this exception is used to defer allocating new page frames to the process until the last possible moment. 
 
 4.6 Interrupt Handling 
-exceptions are handled by sending signal to the  process that caused the exception. Process handles signal later.
+exceptions are handled by sending signal to the process that caused the exception. Process handles signal later.
 Interrupts are async so they can arrive anytime even after the process that caused them has expired Furthermore, due to hardware limitations, several devices may share the same IRQ line. 
 Thhus interrupt handler must be flexible enough to service several devices. In order to do this , several interrupt service routines(ISRs) can be associated with the same interrupt handler; each ISR is a function related to a single device sharing the IRQ line. Each ISR is executed to verify whether its device needs attention; if so, the ISR performs all the operations that need to be executed when the device raises an interrupt. ISRs should be short and real time.
 since while an interrupt handler is running, the signals on the corresponding IRQ line are ignored. Most important, the process on behalf of which an interrupt handler is executed must always stay in the TASK_RUNNING state, or a system freeze could occur. Therefore, interrupt handlers cannot perform any blocking procedure such as I/O disk operations. So Linux divides the actions to be performed following an interrupt into three classes: 
@@ -290,10 +290,10 @@ the 16 physical IRQs are assigned the vectors 32-47.For IRQs, the kernel must es
 how could the kernel handle a signal from (say) a SCSI disk without knowing which vector corresponds to the device? 
 There are two ways to select a line for each device: 
 •By a utility program executed when installing the device: the user to select an available IRQ number or determine an available number by itself. 
-•By a hardware protocol executed at system startup.peripheral devices declare which interrupt lines they are ready to use; the final values are then negotiated to reduce conflicts as much as possible. Once this is done, each interrupt handler can read the assigned IRQ by using a function that accesses some I/O ports of the device. For instance, drivers for devices that comply with the Peripheral Component Interconnect (PCI) standard makeuse of a group of functions such as pci_read_config_byte( ) and  pci_write_config_byte( ) to access the device configuration space.
-Table 4-2. An Example of IRQ Assignment to I/O Devices  
+•By a hardware protocol executed at system startup.peripheral devices declare which interrupt lines they are ready to use; the final values are then negotiated to reduce conflicts as much as possible. Once this is done, each interrupt handler can read the assigned IRQ by using a function that accesses some I/O ports of the device. For instance, drivers for devices that comply with the Peripheral Component Interconnect (PCI) standard makeuse of a group of functions such as pci_read_config_byte( ) and pci_write_config_byte( ) to access the device configuration space.
+Table 4-2. An Example of IRQ Assignment to I/O Devices 
 Figure 4-4
-relationships between the main descriptors that represent the state of the IRQ lines.  Except Bhs
+relationships between the main descriptors that represent the state of the IRQ lines. Except Bhs
 4.6.2.1 The irq_desc_t descriptor 
 An irq _desc array includes NR_IRQS irq _desc_t descriptors, which include the following 
 fields: 
@@ -307,12 +307,12 @@ acknowledged to the PIC.
 IRQ _AUTODETECT The kernel is using the IRQ line whileperforming a hardware device probe. 
 IRQ _WAITING The kernel is using the IRQ line while performing a hardware device probe; moreover, the corresponding interrupt has not been raised. 
 
-Handler Points to the  hw_interrupt_type descriptor that identifies the PIC servicing the IRQ line. 
+Handler Points to the hw_interrupt_type descriptor that identifies the PIC servicing the IRQ line. 
 
-Action :interrupt service routines to be invoked when the IRQ occurs. The field points to the first element of the list of  irqaction descriptors associated with the IRQ.
+Action :interrupt service routines to be invoked when the IRQ occurs. The field points to the first element of the list of irqaction descriptors associated with the IRQ.
 Depth :0 if the IRQ line is enabled and +ve if it has been disabled at least once. Every time the disable_irq( ) function increments it enable_irq( ) function decrements the field.
 
-During system initialization, the init_IRQ( ) function sets the status field of each IRQ  main descriptor to  IRQ _DISABLED
+During system initialization, the init_IRQ( ) function sets the status field of each IRQ main descriptor to IRQ _DISABLED
 as follows: 
 for (i=0; i<NR_IRQS; i++) 
 	irq_desc[i].status = IRQ_DISABLED; 
@@ -324,13 +324,13 @@ set_intr_gate(0x20+i,interrupt[i]);
 This code looks in the interrupt array to find the interrupt handler addresses that it uses to set up the interrupt gates. The interrupt handler for IRQn is named IRQn_interrupt( )
 
 4.6.2.2 The hw_interrupt_type descriptor 
-This descriptor includes a group of pointers to the low-level I/O routines that interact with a specific PIC circuit. Linux supports 8259A  SMP IO-APIC, PIIX4's internal 8259 PIC, and SGI's Visual Workstation Cobalt (IO-)APIC. we'll assume two 8259A PICs, which provides the 16 standard IRQs. In this case, the handler in each of the 16 irq _desc_t descriptors points to the i8259A_irq _type variable. This variable is initialized as follows: 
+This descriptor includes a group of pointers to the low-level I/O routines that interact with a specific PIC circuit. Linux supports 8259A SMP IO-APIC, PIIX4's internal 8259 PIC, and SGI's Visual Workstation Cobalt (IO-)APIC. we'll assume two 8259A PICs, which provides the 16 standard IRQs. In this case, the handler in each of the 16 irq _desc_t descriptors points to the i8259A_irq _type variable. This variable is initialized as follows: 
 struct hw_interrupt_type i8259A_irq_type = { 
-"XT-PIC", 		//The first field in this structure,  "XT-PIC" , is a name. Following that, 
+"XT-PIC", 		//The first field in this structure, "XT-PIC" , is a name. Following that, 
 startup_8259A_irq, //pointers to five different functions used to program the PIC. 
-shutdown_8259A_irq, // two functions  start up and shut down an IRQ line  of the chip,respectively. 
+shutdown_8259A_irq, // two functions start up and shut down an IRQ line of the chip,respectively. 
 do_8259A_IRQ, 
-enable_8259A_irq, //for 8259A chip  these functions coincide with the last two functions
+enable_8259A_irq, //for 8259A chip these functions coincide with the last two functions
 disable_8259A_irq //, which enable and disable the line. 
 }; 
 
@@ -349,7 +349,7 @@ next Points to the next element of list of irqaction.refer to hardware devices t
 
 4.6.3 Saving the Registers 
 Saving registers is the first task of the interrupt handler. handler for IRQn is IRQn_interrupt, and its address is included in the interrupt gate stored in the proper IDT entry. 
-The same  BUILD_IRQ macro is duplicated 16 times, once for each IRQ number, in order to 
+The same BUILD_IRQ macro is duplicated 16 times, once for each IRQ number, in order to 
 yield 16 different interrupt handler entry points. 
 BUILD_IRQ assembly language fragment: 
 IRQn_interrupt: 
@@ -386,15 +386,49 @@ where the pt_regs structure consists of 15 fields:
 The ret_from_intr( ) return address is missing because the C compiler expects a return address on top of the stack and takes this into account when generating the instructions to address parameters. 
 
 do_IRQ( ) can read the IRQ passed and decode it as follows: irq = regs.orig_eax & 0xff; 
-The function then executes:  irq_desc[irq].handler->handle(irq, &regs); 
+The function then executes: irq_desc[irq].handler->handle(irq, &regs); 
 The handler field points to the hw_interrupt_type descriptor that refers to the PIC model servicing the IRQ line.Assuming that the PIC is an 8259A, the handle field points to the do_8259A_IRQ( )
 function, which is thus executed. 
 The do_8259A_IRQ( ) starts by invoking mask_and_ack_8259A( ), which acknowledges the interrupt to the PIC and disables further interrupts with the same IRQ number. 
-Then the the handler checks IRQ_DISABLED and IRQ_INPROGRESS stored in the status field of IRQ descriptor. If both are cleared, the function picks up the pointer to the first irqaction descriptor from the action field and sets the IRQ _INPROGRESS flag. It then invokes handle_IRQ _event( ), which  executes interrupt service for each device on that IRQ as below:
+Then the the handler checks IRQ_DISABLED and IRQ_INPROGRESS stored in the status field of IRQ descriptor. If both are cleared, the function picks up the pointer to the first irqaction descriptor from the action field and sets the IRQ _INPROGRESS flag. It then invokes handle_IRQ _event( ), which executes interrupt service for each device on that IRQ as below:
 do { 
 action->handler(irq, action->dev_id, regs); 
 action = action->next; 
 } while (action); 
 Notice that the kernel cannot break the loop as soon as one ISR has claimed the interrupt because another device on the same IRQ line might need to be serviced. 
-do_8259A_IRQ( ) cleans things up clearing the IRQ_INPROGRESS and if IRQ _DISABLED flag is not set, the function invokes the low-level enable_8259A_irq( ).The control returns to do_IRQ( ) , which checks whether BH tasks are  waiting to be executed.If bottom halves are waiting, the function invokes the do_bottom_half( )function . Finally, do_IRQ( ) terminates and control is transferred to the ret_from_intr address. 
+do_8259A_IRQ( ) cleans things up clearing the IRQ_INPROGRESS and if IRQ _DISABLED flag is not set, the function invokes the low-level enable_8259A_irq( ).The control returns to do_IRQ( ) , which checks whether BH tasks are waiting to be executed.If bottom halves are waiting, the function invokes the do_bottom_half( )function . Finally, do_IRQ( ) terminates and control is transferred to the ret_from_intr address. 
 
+4.6.5 Interrupt Service Routines 
+ISR implements a device-specific operation and acts on the following parameters: 
+irq: The IRQ number allows a single ISR to handle several IRQ lines, 
+dev_id: The device identifier allows a single ISR to take care of several devices of the same type,
+regs:ptr to the Kernel Mode stack area containing the registers saved after interrupt occurred allows the ISR to access the execution context of the interrupted kernel control path.most ISRs do not use these parameters
+
+The SA_INTERRUPT of main IRQ descriptor tells interrupts are enabled or not.ISR invoked with the interrupts in one state can change it through instruction: cli to disable interrupts and sti to enable them.
+
+4.6.6 Bottom Half:BH is low-priority function for interrupt handling,waiting for kernel to run it.BHs that are waiting will be executed only when one of the following events occurs: 
+•The kernel finishes handling a system call. 
+•The kernel finishes handling an exception. 
+•The kernel terminates the do_IRQ( ) function—that is, it finishes handling an interrupt. 
+•The kernel executes the schedule( ) function to select a new process to run on the CPU.
+
+There can be long interval between activation and execution of BHs,BH is important for kernel to service interrupts from multiple devices quickly.CPU remains in Kernel mode until no BH is left to run.Linux uses array "bh_base" to group all BHs together.It is an 32 entry array of pointers to BHs 1 for each type of BH.Linux uses few of them;TIMER_BH, CONSOLE_BH, TQUEUE_BH, SERIAL_BH, IMMEDIATE_BH, and KEYBOARD_BH are most used
+
+4.6.6.1 Activating and tracking the state of bottom halves
+BH must be initialized before use.init_bh(n,routine) function inserts the routine address in the nth entry of bh_base. remove_bh(n) removes the nth bottom half from the table.
+after init, it can be "activated," so it will execute when kernel schedules it.mark_bh(n) activates nth BH.
+bh_active stores 32 flags denoting active BHs,if a BH ends it's flag is cleared;any activation causes one execution.do_bottom_half() executes active BHs by enabeling maskable interrupts than calls run_bottom_halves()
+The function makes sure that one BH is active at a time by executing the following C code fragment: 
+active = bh_mask & bh_active; 
+bh_active &= active; 
+bh = bh_base; 
+do { 
+ if (active & 1) 
+  (*bh)( ); 
+ bh++; 
+ active >>= 1; 
+} while (active); 
+flags in bh_active refering to group of BHs that must be executed are cleared ensuring each bh activation causes one execution of the BH function.Each BH can be "masked"; if masked it won't be executed even if it is activated.The bh_mask variable stores 32 bits that specify which bottom halves are currently masked. The disable_bh(n) and enable_bh(n) functions act on the nth flag of bh_mask; they are used to mask and unmask a bottom half, respectively. Here's why masking bottom halves is useful.
+Assume that a kernel function is modifying some kernel data structure when an exception (for instance, a "Page fault") occurs. After the kernel finishes handling the exception, all active nonmasked botto
+m halves will be executed. If one of the bottom halves accesses the same kernel data structure as the suspended kernel function, both the bottom half and the kernel function will find the data structure in a nonconsistent state. In order to avoid this race condition, the kernel function must mask all bottom halves that access the data structure. 
+Unfortunately, the bh_mask variable does not always ensure that bottom halves remain correctly masked. For instance, let us suppose that some bottom half B is masked by a kernel control path P1, which is then interrupted by another kernel control path P2. P2 once again masks the bottom half B, performs its own operations, and terminates by unmasking B. Now P1 resumes its execution, but Bis (incorrectly) unmasked. It is thus necessary to use counters rather than a simple binary flag to keep track of masking and to add one more table called bh_mask_count whose entries contain the masking level of each  bottom  half.  The  disable_bh(n)  and  enable_bh(n)  functions  update  bh_mask_count[n] before acting on the nth flag of bh_mask. 
