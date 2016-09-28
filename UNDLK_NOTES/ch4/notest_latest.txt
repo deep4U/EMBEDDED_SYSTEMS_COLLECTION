@@ -424,11 +424,67 @@ bh_active &= active;
 bh = bh_base; 
 do { 
  if (active & 1) 
-  (*bh)( ); 
+ (*bh)( ); 
  bh++; 
  active >>= 1; 
 } while (active); 
 flags in bh_active refering to group of BHs that must be executed are cleared ensuring each bh activation causes one execution of the BH function.Each BH can be "masked"; if masked it won't be executed even if it is activated.The bh_mask variable stores 32 bits that specify which bottom halves are currently masked. The disable_bh(n) and enable_bh(n) functions act on the nth flag of bh_mask; they are used to mask and unmask a bottom half, respectively. Here's why masking bottom halves is useful.
-Assume that a kernel function is modifying some kernel data structure when an exception (for instance, a "Page fault") occurs. After the kernel finishes handling the exception, all active nonmasked botto
-m halves will be executed. If one of the bottom halves accesses the same kernel data structure as the suspended kernel function, both the bottom half and the kernel function will find the data structure in a nonconsistent state. In order to avoid this race condition, the kernel function must mask all bottom halves that access the data structure. 
-Unfortunately, the bh_mask variable does not always ensure that bottom halves remain correctly masked. For instance, let us suppose that some bottom half B is masked by a kernel control path P1, which is then interrupted by another kernel control path P2. P2 once again masks the bottom half B, performs its own operations, and terminates by unmasking B. Now P1 resumes its execution, but Bis (incorrectly) unmasked. It is thus necessary to use counters rather than a simple binary flag to keep track of masking and to add one more table called bh_mask_count whose entries contain the masking level of each  bottom  half.  The  disable_bh(n)  and  enable_bh(n)  functions  update  bh_mask_count[n] before acting on the nth flag of bh_mask. 
+Assume that a kernel function is modifying some kernel data structure when an exception (for instance, a "Page fault") occurs. After the kernel finishes handling the exception, all active nonmasked BHswill be executed. If one of BHs uses same kernel data structure both the data structure becomes nonconsistent for BH and kernel functn. to avoid this race condition kernel function must mask all BHs that access the data structure. 
+Unfortunately, the bh_mask variable does not always ensure that bottom halves remain correctly masked. For instance, let us suppose that some bottom half B is masked by a kernel control path P1, which is then interrupted by another kernel control path P2. P2 once again masks the bottom half B, performs its own operations, and terminates by unmasking B. Now P1 resumes its execution, but Bis (incorrectly) unmasked. It is thus necessary to use counters rather than a simple binary flag to keep track of masking and to add one more table called bh_mask_count whose entries contain the masking level of each bottom half. The disable_bh(n) and enable_bh(n) functions update bh_mask_count[n] before acting on the nth flag of bh_mask. 
+
+4.6.6.2 Extending a bottom half 
+BHs are used to allow few functions related to interrupt handling to be executed in a deferred manner. This approach has been stretched in two directions: 
+•To allow a generic kernel function even except a function that services an interrupt, to be executed as a BH
+•To allow several kernel functions, instead of a single one, to be associated with a bottom half 
+Groups of functions are represented by task queues:lists of struct tq_struct having the following structure: 
+struct tq_struct { 
+ struct tq_struct *next; /* linked list of active bh's */ 
+ unsigned long sync; /* must be initialized to zero */ 
+ void (*routine)(void *); /* function to call */ 
+ void *data; /* argument to function */ 
+}; 
+DECLARE_TASK_QUEUE is used to allocate a new task queue,queue_task( ) inserts a new function in a task queue.The run_task_queue( ) function executes all the functions in a given task queue. eg: 
+•tq _immediate task queue, run by the IMMEDIATE_BH BH, has functions to be executed together with the standard BHs.The kernel activates the IMMEDIATE_BH BH whenever a function is added to the tq _immediate task queue. 
+•tq _timer run by the TQUEUE_BH, which is activated at every timer interrupt. means it runs about every 10 ms
+
+4.6.7 Dynamic Handling of IRQ Lines 
+except IRQ0, IRQ2, and IRQ13, the remaining 13 IRQs are dynamically handled.Therefore the same interrupt can be used by several hardware devices even if they do not allow IRQ sharing: the trick consists in serializing the activation of the hardware devices so that just one at a time owns the IRQ line. Before activating a device that is going to make use of an IRQ line, its driver invokes request_irq( ). This function 
+-creates a new irqaction descriptor and initializes it with the parameter values; 
+-it then invokes the setup_x86_irq( ) function to insert the descriptor in the proper IRQ list. 
+driver aborts operation if fntn returns err,i.eIRQ is in use by device that does not allow interrupt sharing after device operation,driver calls free_irq() to remove the descriptor from IRQ list and release the memory 
+
+suppose a program wants to address the /dev/fd0 device file corresponding to the first floppy disk on the system.The program can either directly access /dev/fd0 or mount a filesystem on it.
+floppy driver will issue the following request:Floppy disks are "old" devices that do not allow IRQ sharing. 
+request_irq(6, floppy_interrupt,SA_INTERRUPT|SA_SAMPLE_RANDOM, "floppy", NULL); 
+As can be observed, the floppy_interrupt( ) interrupt service routine must execute with the interrupts disabled (SA_INTERRUPT) and no sharing of the IRQ (SA_SHIRQ flag cleared). When the operation on the floppy disk is concluded the driver releases IRQ6: free_irq(6, NULL); 
+To insert an irqaction descriptor in the proper list, kernel invokes setup_x86_irq( ), passing to it the parameters irq _nr, the IRQ number, and new, the address of a previously allocated irqaction descriptor. 
+This function: 
+1.Checks if another device is using the irq_nr IRQ if so checks SA_SHIRQ flags in the irqaction descriptors of both devices specify that the IRQ line can be shared. Returns an error code if the IRQ line cannot be used
+2.Adds *new (the new irqaction descriptor) at the end of the list to which irq _desc[irq _nr]->action points.
+3.If no other device is sharing the same IRQ, clears the IRQ _DISABLED and IRQ _INPROGRESS flags in the flags field of new and reprograms the PIC to make sure that IRQ signals are enabled. 
+Here is an example of how setup_x86_irq( ) is used, drawn from system initialization. 
+kernel initializes irq0 descriptor of interval timer device by executing belowinstructions in time_init()
+struct irqaction irq0 = {timer_interrupt, SA_INTERRUPT, 0, "timer", NULL,}; 
+First, the irq0 variable of type irqaction is initialized:handler field is set to timer_interrupt(),flags field is set to SA_INTERRUPT,name "timer", and the last field is set to NULL as no dev_id value is used. 
+setup_x86_irq(0, &irq0); 
+
+4.7 Returning from Interrupts and Exceptions 
+main objective is to resume execution of some program, several issues must be considered before doing it: 
+•number of kernel control paths being concurrently executed:if it is one,CPU must switch back to User Mode. 
+•Active bottom halves to be executed: if there are some, they must be executed. 
+•if any Pending process switch request kernel doesprocess scheduling else control is given to current process
+•if current process was sent some signal, it must be handled. 
+The kernel assembly language code that does all these things is not,a function since control is never returned to caller.It is a piece of code with three different entry points ret_from_intr, ret_from_sys_call, and ret_from_exception.We will refer to it as three different functions since this makes the description simpler. 
+We shall thus refer quite often to the following three entry points as functions: 
+ret_from_intr( ) Terminates interrupt handlers 
+ret_from_sys_call( ) Terminates system calls, that is, kernel control paths engendered by 0x80 exceptions 
+ret_from_exception( ) Terminates all exceptions except the 0x80 ones 
+
+The general flow diagram with the corresponding three entry points is illustrated in Figure 4-5
+
+4.8 Anticipating Linux 2.4 
+Linux 2.4 introduces a new mechanism called software interrupt. Software interrupts are bottom halves they allow to defer the execution of a kernel function. However, while bottom halves were strictly serialized (because no two bottom halves can be executed at the same time even on different CPUs), software interrupts are not serialized in any way. It is quite possible that two CPUs run two instances of the same software interrupt at the same time. In this case, of course, the software interrupt must be reentrant. Networking, in particular, greatly benefits from software interrupts: it is much more efficient on multiprocessor systems because it uses two software interrupts in place of the old NET_BH bottom half. 
+
+Linux 2.4 introduces another mechanism similar to the bottom half called tasklet. Tasklets are built on top of software interrupts, but they are serialized with respect to themselves: two CPUs can execute two tasklets at the same time, but these tasklets must be different. Tasklets are much easier to write than generic software interrupts, because they need not be reentrant. 
+Bottom halves are still there but are now built on top of tasklets.Device driver developers sould update their drivers and replace bottom halves with tasklets, because BHs degrade performance of multiprocessor systems.
+On the hardware side,Linux now supports IO-APIC chips in uniprocessor system and can handle several external IO-APIC chips in multiprocessor systems.(this made it possible to port Linux to large enterprise system
