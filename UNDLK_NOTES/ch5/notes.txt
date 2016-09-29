@@ -1,0 +1,111 @@
+--------------Timing Measurement--------------
+Linux kernel does two kinds of timing measurement tasks: 
+•Keeps current time and date to be used by time(), ftime(), and gettimeofday() system calls and as timestamps for files and network packets 
+•Maintains timers:to notify Kernel / user expirt of a certain interval of time
+
+5.1 Hardware Clocks
+kernel interacts with:the Real Time Clock, the Time Stamp Counter(both for current time), and the Programmable Interval Timer. (periodic intervals for timers) 
+
+5.1.1 Real Time Clock (RTC), is independent of CPU and all other chips.it ticks even when system is off and is energized by a small battery or accumulator.
+It issues periodic interrupts on IRQ8.It can be used as an alarm.Linux uses RTC for time and date and provides /dev/rtc to program it./sbin/clock to setup it
+5.1.2 Time Stamp Counter 
+Most microprocessors have CLK I/P Pin,to give clk for oscillator.intel MPs have 64-bit Time Stamp Counter (TSC) a counter incremented at each clock signal and is read by rdtsc instruction. Linux uses TSC to get more accurate timing than theProgrammable Interval Timer.For that Linux must know clock frequency while initializing the system:which is not declared when compiling the kernel. at boot time calibrate_tsc() figures out and returns this frequency.f is calculated using PIT counting clock signals(difference in TSC) in long time of 50.00077 ms.since the function is invoked only during system initialization the long time is ok.
+
+1.3 Programmable Interval Timer 
+PIT makes the user aware that some time interval has elapsed by issuing timer interrupt,notifying the kernel the expiration of one more time interval.PIT goes on issuing interrupts forever at some fixed frequency established by the kernel.PIT is also used to drive an audio amplifier connected to the internal speaker.
+
+Linux programs the first PIT on IRQ0 at about 100-Hz(10ms).This time interval is called a tick, and its ms interval is in tick variable.The ticks beat time for all activities in the system.
+System responsiveness depends on how fast a running process is differed by a higher-priority one moreover, the kernel checks whether the running process should be preempted while handling the timer interrupt.This is a trade-off however: shorter ticks means larger time spent in Kernel Mode, and lesser in User Mode. user programs run slower. Therefore, only very powerful machines can adopt very short ticks and afford the consequent overhead.
+macros in the Linux code determine the frequency of timer interrupts: 
+•HZ yields number of timer interrupts per second, ie, the frequency of timer interrupts.
+•CLOCK_TICK_RATE yields the value 1193180,internal oscillator frequency. 
+•LATCH yields the ratio between CLOCK_TICK_RATE and HZ used to program the PIT. 
+The first PIT is initialized by init_IRQ( ) as follows: 
+outb_p(0x34,0x43); //command to the PIT to issue interrupts at a new rate.
+outb_p(LATCH & 0xff , 0x40); //next two invocations give new rate to the device.
+outb(LATCH >> 8 , 0x40); //16-bit LATCH is sent to the device 
+outb() is same os outb instruction: it copies the first operand into the I/O port specified as the second operand.outb_p( ) similar to outb( ), except that it introduces a pause by executing a no-op instruction.
+5.2 The Timer Interrupt Handler 
+Each occurrence of a timer interrupt triggers the following major activities: 
+•Updates the time elapsed since system startup. 
+ Updates the time and date. 
+•Checks current process run time and preempts if > allocated time(called quanta)
+•Updates resource usage statistics. 
+•Checks if any software timer time has ended; if, invokes the proper function. 
+
+The first activity is urgent,and is performed by the timer interrupt handler. The remaining four are performed by the functions invoked by the TIMER_BH and TQUEUE_BH bottom halves.The kernel uses two basic timekeeping functions: 
+one to keep the current time up to date 
+and another to count the number of microseconds that have elapsed within the current second. 
+There are two different ways to maintain such values: a more precise method if we have Time Stamp Counter (TSC) and a less precise method.the kernel creates two variables to store the functions it uses, pointing the variables to the functions using the TSC if it exists: 
+•current time is calculated by do_gettimeofday( ) if TSC and by do_normal_gettime() else.A pointer to the proper function is in the variable do_get_fast_time
+•number of microseconds is calculated by do_fast_gettimeoffset() if TSC anddo_slow_gettimeoffset() else.Address of function is in the variable do_gettimeoffset
+time_init( ) function runs during kernel startup, sets the variables to point to the right functions and sets up the interrupt gate corresponding to IRQ0. 
+
+5.3 PIT's Interrupt Service Routine 
+Once the interrupt gate is initialized,handler field of IRQ0's irqaction contains address of timer_interrupt() which starts running with the interrupts disabled, as IRQ0's main descriptor has the SA_INTERRUPT set.It does following steps:
+1.If the CPU has a TSC register, it performs the following substeps: 
+a.Executes rdtsc to store value of the TSC register in the last_tsc_low variable
+b.Reads the 8254 chip device internal oscillator and computes the delay between the timer interrupt occurrence and the execution of the ISR
+oscillator drives a counter that is continuously decremented. When the counter becomes 0 raises an IRQ0.reading counter tells time elapsed since the interrupt occurred.
+c.Stores that delay (in microseconds) in the delay_at_last_interrupt 
+
+2.It invokes do_timer_interrupt( ). 
+
+do_timer_interrupt() is ISR common to 80x86 models, does following operations: 
+1.It invokes the do_timer( ). 
+2.If an adjtimex( ) system call has been issued, it invokes the set_rtc_mmss( )function once every 660 seconds, to adjust the Real Time Clock 
+
+do_timer( ) runs with the interrupts disabled, must be executed as quickly as possible.simply updates one value—the time elapsed from system startup—while delegating all remaining activities to two bottom halves.The function refers to three main variables xtime stores the approximate current time. 
+The three do_timer() variables are: 
+jiffies:number of ticks since system boot;incremented on every tick.Since jiffies is a 32-bit unsigned int,it returns to 0 about 497 days after boot. 
+lost_ticks: The number of ticks that has occurred since the last update of xtime
+lost_ticks_system:number of ticks occurred while the process was running in Kernel Mode since the last update of xtime.user_mode macro examines the CPL field of the cs saved in stack to determine if process was running in Kernel Mode. 
+The do_timer( ) function is equivalent to: 
+void do_timer(struct pt_regs * regs) 
+{ 
+ jiffies++; 
+ lost_ticks++; 
+ mark_bh(TIMER_BH); 
+ if (!user_mode(regs)) 
+ lost_ticks_system++; 
+ if (tq_timer) 
+ mark_bh(TQUEUE_BH); 
+}
+5.4 The TIMER_BH Bottom Half Functions 
+
+timer_bh() associated with TIMER_BH bottom half invokes the update_times( )run_old_timers( ), and run_timer_list( ) auxiliary functions
+
+5.4.1 Updating the Time and Date 
+The xtime variable of type struct timeval is where user programs get the current time and date. The kernel also occasionally refers to it, for instance, when updating inode timestamps. In particular, xtime.tv_sec stores the number of seconds that have elapsed since midnight of January 1, 1970,while xtime.tv_usec stores the number of microseconds that have elapsed within the last second.
+During system init,time_init( ) is invoked to set up time and date: it reads them from RTC invoking get_cmos_time(), then it initializes xtime. Once this is done,kernel does not need RTC and relies on the TIMER_BH activated once every tick.
+The update_times( ) function invoked by the TIMER_BH bottom half updates xtime by disabling interrupts and executing the following statement: 
+if (lost_ticks) update_wall_time(lost_ticks); 
+update_wall_time() invokes the update_wall_time_one_tick() function lost_ticks times;each invocation adds 10000 to the xtime.tv_usec If xtime.tv_usec has become greater than 999999,update_wall_time() also updates the tv_sec field of xtime. 
+
+5.4.2 Updating Resource Usage Statistics 
+The value of lost_ticks is also used, together with that of lost_ticks_system, to update resource usage statistics used by utilities such as top. A user who enters.After updating the system clock, update_times( ) reenables the interrupts and performs the following actions: 
+Clears lost_ticks after storing its value in ticks
+•Clears lost_ticks_system after storing its value in system
+•Invokes calc_load(ticks)
+•Invokes update_process_times(ticks, system)
+calc_load( ) function counts the number of processes in the TASK_RUNNING or TASK_UNINTERRUPTIBLE state to update the CPU usage statistics. 
+update_ process_times( ) updates some kernel statistics stored in the kstat variable of type kernel_stat; it then invokes update_one_process() to update some fields storing statistics that can be exported to user programs through the times( ) system call.distinction is made between CPU time spent in User Mode and in Kernel Mode. The function perform the following actions: 
+•Updates per_cpu_utime in current process descriptor,ticks process has been running in User Mode. 
+•Updates per_cpu_stime of current's process descriptor,ticks process has been running in Kernel Mode. 
+•Invokes do_ process_times( ), which checks whether the total CPU time limit is over; if so, sends SIGXCPU and SIGKILL signals to current. 
+•Invokes the do_it_virt( ) and do_it_ prof( ) functions. 
+times.tms_cutime and times.tms_cstime are in the process descriptor to count number of CPU ticks spent by the children,for efficiency, they are updated only when parent process queries the state of one of its children
+
+5.4.3 CPU's Time Sharing 
+Timer interrupts are essential for time sharing the CPU among runnable processes.if the process is not terminated when its quantum expires, the schedule() function selects the new process to run.The counter field of the process descriptor specifies how many ticks of CPU time are left to the process.The quantum is always a multiple of a tick. The value of counter is updated at every tick by update_process_times( ) as follows: 
+if (current->pid) { //PID 0(swapper) is not time-shared when no other TASK_RUNNING processes exist.
+ current->counter -= ticks; //counter is updated in a deferred manner by a BH,decrement might be larger than a single tick.the ticks variable denotes the number of ticks since the bottom half was activated
+ if (current->counter < 0) { //
+  current->counter = 0; //When counter becomes smaller than 0, the need_resched field of is set to 1.  
+  current->need_resched = 1; //the schedule( )function will be invoked before resuming User Mode execution, and other TASK_RUNNING processes will have a chance to resume execution on the CPU.  } } 
+
+5.4.4 The Role of Timers 
+a time-out denotes a moment at which the time interval associated with a timer has elapsed. Timers are widely used both by the kernel and by processes. floppy disk drivers, for instance, use timers to switch off the device motor after the floppy has not been accessed for a while.Implementing a timer is relatively easy: each timer contains a field that indicates how far in the future the timer should expire. This field is initially calculated by adding the right number of ticks to the current value of jiffies. The field does not change. Every time the kernel checks a timer, it compares the expiration field to the value of jiffies at the current moment, and the timer expires when jiffies is greater or equal to the stored value. This comparison  is  made  via  the  time_after, time_before, time_after_eq,  and  time_before_eq macros, which take care of possible overflows of jiffies Linux considers three types of timers called :static timersd ynamic timers interval timers
+
+The first two types are used by the kernel, while interval timers may be created by processes in User Mode.
+checking for timer functions is always done by bottom halves kernel cannot ensure that timer functions will start right at their expiration times; but either at the proper time or after with a delay of up to a few hundreds of ms. For that reason, timers are not appropriate for real-time applications 
