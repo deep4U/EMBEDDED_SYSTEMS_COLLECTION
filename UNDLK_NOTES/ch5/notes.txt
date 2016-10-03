@@ -101,11 +101,60 @@ Timer interrupts are essential for time sharing the CPU among runnable processes
 if (current->pid) { //PID 0(swapper) is not time-shared when no other TASK_RUNNING processes exist.
  current->counter -= ticks; //counter is updated in a deferred manner by a BH,decrement might be larger than a single tick.the ticks variable denotes the number of ticks since the bottom half was activated
  if (current->counter < 0) { //
-  current->counter = 0; //When counter becomes smaller than 0, the need_resched field of is set to 1.  
-  current->need_resched = 1; //the schedule( )function will be invoked before resuming User Mode execution, and other TASK_RUNNING processes will have a chance to resume execution on the CPU.  } } 
+ current->counter = 0; //When counter becomes smaller than 0, the need_resched field of is set to 1. 
+ current->need_resched = 1; //the schedule( )function will be invoked before resuming User Mode execution, and other TASK_RUNNING processes will have a chance to resume execution on the CPU. } } 
 
 5.4.4 The Role of Timers 
-a time-out denotes a moment at which the time interval associated with a timer has elapsed. Timers are widely used both by the kernel and by processes. floppy disk drivers, for instance, use timers to switch off the device motor after the floppy has not been accessed for a while.Implementing a timer is relatively easy: each timer contains a field that indicates how far in the future the timer should expire. This field is initially calculated by adding the right number of ticks to the current value of jiffies. The field does not change. Every time the kernel checks a timer, it compares the expiration field to the value of jiffies at the current moment, and the timer expires when jiffies is greater or equal to the stored value. This comparison  is  made  via  the  time_after, time_before, time_after_eq,  and  time_before_eq macros, which take care of possible overflows of jiffies Linux considers three types of timers called :static timersd ynamic timers interval timers
+a time-out denotes a moment at which the time interval associated with a timer has elapsed. Timers are widely used both by the kernel and by processes. floppy disk drivers, for instance, use timers to switch off the device motor after the floppy has not been accessed for a while.Implementing a timer is relatively easy: each timer contains a field that indicates how far in the future the timer should expire. This field is initially calculated by adding the right number of ticks to the current value of jiffies. The field does not change. Every time the kernel checks a timer, it compares the expiration field to the value of jiffies at the current moment, and the timer expires when jiffies is greater or equal to the stored value. This comparison is made via the time_after, time_before, time_after_eq, and time_before_eq macros, which take care of possible overflows of jiffies Linux considers three types of timers called :static timersd ynamic timers interval timers
 
 The first two types are used by the kernel, while interval timers may be created by processes in User Mode.
-checking for timer functions is always done by bottom halves kernel cannot ensure that timer functions will start right at their expiration times; but either at the proper time or after with a delay of up to a few hundreds of ms. For that reason, timers are not appropriate for real-time applications 
+checking for timer functions is always done by bottom halves kernel cannot ensure that timer functions will start right at their expiration times; but either at the proper time or after with a delay of up to a few hundreds of ms. For that reason, timers are not appropriate for real-time applications
+
+5.4.5 Static Timers 
+The first versions of Linux allowed only 32 timers tat rely on statically allocated kernel data structure. Si32 timers as active flags can be stored in 1 32bit variable.Static timers are stored in the timer_table array,wit 32 entries. Each consists of the following 
+timer_struct structure: 
+struct timer_struct { 
+ unsigned long expires; //expiry time in form of number of ticks that elapsed since the system was started up. if it is smaller than or equal to the value of jiffies are expired/devayed
+ void (*fn)(void); //fn field contains the address of the function to be executed when the timer expires. }; 
+
+timer_active is used to identify the active static timers: each bit of this 32-bit variable is a flag that specifies whether the corresponding timer is activated.to activate a static timer, the kernel must simply: 
+•Register the function to be executed in the fn field of the timer.
+•Compute expiration time (adding specified value to jiffies) and store it in the expires field of the timer. 
+•Set the proper flag in timer_active
+
+run_old_timers( ) checks for decayed/expired static timers, which is invoked by the TIMER_BH bottom half: 
+void run_old_timers(void) 
+{ 
+ struct timer_struct *tp; 
+ unsigned long mask; 
+ for (mask = 1, tp = timer_table; mask; 
+   tp++, mask += mask) { 
+  if (mask > timer_active) 
+   break; 
+  if (!(mask & timer_active)) 
+   continue; 
+  if (tp->expires > jiffies) 
+   continue; //Once a decayed active timer has been identified, 
+  timer_active &= ~mask;// the corresponding active flag is cleared before 
+  tp->fn( );// executing the function that the fn field points to, 
+sti( );//ensuring that the timer won't be invoked again at each future execution of run_old_timers( ).  } } 
+
+5.4.6 Dynamic Timers 
+Dynamic timers may be created and destroyed with no limit on the number of currently active dynamic timers. A dynamic timer is stored in the following timer_list structure: 
+struct timer_list { 
+ struct timer_list *next; //implement links for a doubly linked circular list.
+ struct timer_list *prev; //depending on expires value each active dynamic timer is in one of 512 lists
+ unsigned long expires; 
+ unsigned long data;//specifies a parameter to be passed to this timer function making it possible to define a single general-purpose function that handles the time-outs of several device drivers; the data field could store the device ID or other meaningful data that could be used by the function to differentiate the device. void (*function)(unsigned long);//contains address of the function to be executed when the timer expires. 
+}; 
+In order to create and activate a dynamic timer, the kernel must: 
+1.Create a new struct timer_list object, say t. This can be done in several ways by: 
+	oDefining a static global variable in the code 
+	oDefining a local variable inside a function:  the object is stored on the Kernel Mode stack 
+	oIncluding the object in a dynamically allocated descriptor 
+2.Initialize the object by invoking init_timer(&t). sets the next and prev fields to NULL
+3.If the dynamic timer is not in a list, assign value to expires.else,update the expires field by invoking the mod_timer( ) function, which also takes care of moving the object into the proper list (discussed shortly)
+4.Load function field with address of function. If required, load data field with a parameter value  
+5.If the dynamic timer is not inserted in a list, insert t in the proper list invoking the add_timer(&t). 
+if timer has decayed, kernel removes t from its list. Sometimes,a process should explicitly remove a timer from its list via del\_timer().A sleeping process may be woken up before the time-out, and may choose to destroy the timer.del\_timer() on a timer already decayed does no harm,so using the fnctn is a good practice. 
+	run_old_timers() can identify the active decayed static timers by executing a single for loop on the 32 timer_table components.This approach would be too costly for dynamic timers.maintaining a sorted list would not be much more efficient,but insertion and deletion operations would be costly.The solution adopted is based on a clever data structure that partitions the expires values into blocks of ticks and allows dynamic timers to percolate efficiently from lists with larger expires values to lists with smaller ones. The main data structure is an array called tvecs, whose elements point to five groups of lists identified by the tv1, tv2, tv3, tv4, and tv5 structures (see Figure 5-1). The tv1 structure is of type struct timer_vec_root, which includes an index field and a vec array of 256 pointers to timer_list elements, that is, to lists of dynamic timers. It contains all dynamic timers that will decay within the next 255 ticks. The index field specifies the currently scanned list; it is initialized to and incremented by 1 (modulo 256) at every tick. The list referenced by index contains all dynamic timers that have expired during the current tick; the next list contains all dynamic timers that will expire in the next tick; the (index+k)-th list contains all dynamic timers that will expire in exactly k ticks. When index returns to 0, this means that all the timers in tv1 have been scanned: in this case, the list pointed to by tv2.vec[tv2.index] is used to replenish tv1
