@@ -39,6 +39,15 @@ int intcomp (const void *i,const void *j){
 	else
 		return 0;
 }
+int charcomp (const void *i,const void *j){
+        if((*((char *)i)>((*(char *)j))))
+                return 1;
+        else if ((*(char *)i)<(*(char *)j))
+                return -1;
+        else
+                return 0;
+}
+
 int binsearch(const int key,int nmemb, int base, int arr[]) 
 {
 		printf("CALLED \n");
@@ -72,6 +81,16 @@ void main(int argc,char *argv[]) {
 	int *res=((int *) binsearch_gen(&key,&arr,10,sizeof(int),intcomp));
 	if(res!=NULL)
 		printf("found at %p value is %d after %p where value is %d\n",res,*res,res-1,*(res-1));
+	char carr[]={'a','b','c','d','e','f'};
+	char key_c=argv[2][0];
+
+	printf(" START %p	 END  %p	%d\n",carr,carr+(sizeof(carr)/sizeof(char))-1,(sizeof(carr)/sizeof(char))-1);
+	for( i=0;i<(sizeof(carr)/sizeof(char));i++)
+		printf(" arr %d index is %p value is %c\n",i,(carr+(i)),*(carr+i));
+	char *res_c=((char *) binsearch_gen(&key_c,&carr,6,sizeof(char),charcomp));
+        if(res_c!=NULL)
+                printf("found at %p value is %c after %p where value is %c\n",res_c,*res_c,res_c-1,*(res_c-1));
+
 //	if(NULL!=((int *) binsearch_gen(&key,&arr,10,sizeof(int),intcomp)))
 //		printf("found at %p",((int *) binsearch_gen(&key,&arr,10,sizeof(int),intcomp)));
 //	if (res == -1)
